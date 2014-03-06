@@ -1,0 +1,118 @@
+allowed = {"ikkonoishi"}
+monitors = {}
+sensor = nil
+pass = "1234"
+openforallowed = false
+redstone.setOutput("top",true)
+
+for i, v in pairs(peripheral.getNames()) do 
+  if string.find(v,"monitor",1,true) then 
+    m = peripheral.wrap(v) 
+    m.setBackgroundColor(colors.white) 
+    m.clear() 
+    table.insert(monitors,m)
+  end 
+  if string.find(v,"openperipheral_sensor",1,true) then
+    sensor = peripheral.wrap(v)
+  end
+end
+
+function setMonitorColors(color)
+  for i, v in pairs(monitors) do
+    v.setBackgroundColor(color)
+    v.clear()
+  end
+end
+
+function runKeypad(side,x,y)
+  monitor = peripheral.wrap(side)
+  monitor.setBackgroundColor(colors.black)
+  local sx, sy = monitor.getSize()
+  if x + 3 > sx then 
+    x = sx - 3
+  end
+  if y + 4 > sy then
+    y = sy - 3
+  end
+  monitor.setCursorPos(x,y)
+  monitor.write("123")
+  monitor.setCursorPos(x,y+1)
+  monitor.write("456")
+  monitor.setCursorPos(x,y+2)
+  monitor.write("789")
+  local trypass = ""
+  local sl = string.len(pass)
+  for i = 1, sl, 1 do
+    local timeout = os.startTimer(1)
+    local timedout, touched = false, false
+    repeat 
+    local event, caller, xpush, ypush = os.pullEvent()
+    if event == "monitor_touch" then
+      if caller == side then
+        if math.abs(xpush - 1 - x) <= 1 and
+           math.abs(ypush - 1 - y) <= 1 then
+          touched = true
+          local num = 1 + xpush - x + ((ypush - y) * 3)
+          trypass = trypass .. num
+        end
+      end    
+      elseif event == "timer" and caller == timeout then
+        timedout = true
+      end
+    until timedout or touched
+  end
+  if trypass == pass then 
+    openDoor()
+  else
+    rejectAccess()
+  end
+  print(trypass)
+end
+
+function openDoor()
+  setMonitorColors(colors.green)
+  redstone.setOutput("top",false)
+  sleep(3)
+  redstone.setOutput("top",true)
+  setMonitorColors(colors.white)
+end
+
+function rejectAccess()
+  setMonitorColors(colors.red)
+  sleep(1)
+  setMonitorColors(colors.white)
+end
+
+function scanForAllowed()
+  local shouldopen = false
+  if not sensor then return false end
+  for i,v in pairs(allowed) do  
+    if pcall(sensor.getPlayerData,v) then 
+      player = sensor.getPlayerData(v)
+      if math.abs(player.position.z) < 3 and 
+         math.abs(player.position.x) < 3 and
+         player.position.y == 2 then
+        shouldopen = true
+      end
+    end
+  end
+  if shouldopen and not openforallowed then
+    setMonitorColors(colors.green)
+    openforallowed = true
+    redstone.setOutput("top",false)
+  elseif not shouldopen and openforallowed then
+    setMonitorColors(colors.white)
+    openforallowed = false
+    redstone.setOutput("top",true)
+  end
+end
+
+while true do
+  scanForAllowed()
+  os.startTimer(1)
+  local event, side, xPos, yPos = os.pullEvent()
+  if event == "monitor_touch" and not openforallowed then
+    setMonitorColors(colors.yellow)
+    runKeypad(side,xPos,yPos)
+  end  
+end
